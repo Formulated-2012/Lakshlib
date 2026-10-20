@@ -1,0 +1,609 @@
+#include "main.h"
+#include "lemlib/api.hpp"
+
+pros::Controller master(pros::E_CONTROLLER_MASTER);
+
+
+// =========================
+// MOTORS
+// =========================
+
+// Drive
+pros::MotorGroup leftDrive({-1, -10});
+pros::MotorGroup rightDrive({11, 15});
+
+// Lift
+pros::MotorGroup lift({-2, 12});
+
+// Claw
+pros::Motor claw(-3);
+
+// Intake
+pros::MotorGroup intake({-4, 13});
+
+// 5.5W motor
+pros::Motor toggleMotor(-5);
+
+
+// =========================
+// SENSORS
+// =========================
+
+// IMU
+pros::Imu imu(6);
+
+// Lift rotation sensor
+pros::Rotation liftencoder(14);
+
+
+// =========================
+// LEMLIB CONFIG
+// =========================
+
+lemlib::Drivetrain drivetrain(
+    &leftDrive,
+    &rightDrive,
+    9.75,
+    lemlib::Omniwheel::NEW_275,
+    360,
+    2
+);
+
+
+// Lateral PID
+lemlib::ControllerSettings lateralController(
+    100,
+    0,
+    5,
+    3,
+    1,
+    100,
+    3,
+    500,
+    20
+);
+
+
+// Angular PID
+lemlib::ControllerSettings angularController(
+    4,
+    0,
+    43,
+    3,
+    1,
+    100,
+    3,
+    500,
+    0
+);
+
+
+// No tracking wheels
+lemlib::OdomSensors sensors(
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+    &imu
+);
+
+
+// Chassis
+lemlib::Chassis chassis(
+    drivetrain,
+    lateralController,
+    angularController,
+    sensors
+);
+
+
+// =========================
+// CLAW FUNCTIONS
+// =========================
+
+void openClaw() {
+
+    claw.move_voltage(5000);
+    intake.move(0);
+}
+
+
+void closeClaw() {
+
+    claw.move_voltage(-1500);
+    intake.move(127);
+}
+
+
+// =========================
+// LIFT PID
+// =========================
+
+double liftkP = 0.03;
+double liftkI = 0.0;
+double liftkD = 0.08;
+
+int liftTarget = 0;
+
+bool liftPIDRunning = false;
+
+
+// =========================
+// LIFT PID TASK
+// =========================
+
+void liftPIDTask(void* param) {
+
+    double previousError = 0;
+    double integral = 0;
+
+    while (true) {
+
+        if (liftPIDRunning) {
+
+            int currentPosition =
+                liftencoder.get_position();
+
+            double error =
+                liftTarget - currentPosition;
+
+
+            integral += error;
+
+            if (error > 5000 || error < -5000) {
+                integral = 0;
+            }
+
+
+            double derivative =
+                error - previousError;
+
+
+            double output =
+                (error * liftkP) +
+                (integral * liftkI) +
+                (derivative * liftkD);
+
+
+            if (output > 127) {
+                output = 127;
+            }
+
+            if (output < -127) {
+                output = -127;
+            }
+
+
+            lift.move(output);
+
+            previousError = error;
+
+        } else {
+
+            // Reset PID calculations
+            // DO NOT control lift motor here
+            // Driver control needs full control
+            previousError = 0;
+            integral = 0;
+        }
+
+
+        pros::delay(10);
+    }
+}
+
+// TEMPORARY: lift PID tuning mode
+// UP / DOWN  = move lift to high / low target
+// A / B      = kP up / down
+// X / Y      = kD up / down
+
+// =========================
+// START LIFT PID
+// =========================
+
+void liftstart() {
+
+    // Hold current position when PID starts
+    liftTarget =
+        liftencoder.get_position();
+
+    liftPIDRunning = true;
+}
+
+
+// =========================
+// STOP LIFT PID
+// =========================
+
+void liftstop() {
+
+    liftPIDRunning = false;
+
+    // Stop lift once
+    lift.move(0);
+}
+
+
+// =========================
+// UPDATE LIFT TARGET
+//
+// DOES NOT WAIT
+// =========================
+
+void LiftMove(int position) {
+
+    // Only changes target.
+    // PID task moves lift in background.
+    liftTarget = position;
+}
+
+
+// =========================
+// INITIALIZE
+// =========================
+
+void initialize() {
+
+    pros::lcd::initialize();
+
+
+    // =========================
+    // BRAKE MODES
+    // =========================
+
+    leftDrive.set_brake_mode(
+        pros::E_MOTOR_BRAKE_COAST
+    );
+
+    rightDrive.set_brake_mode(
+        pros::E_MOTOR_BRAKE_COAST
+    );
+
+    lift.set_brake_mode(
+        pros::E_MOTOR_BRAKE_HOLD
+    );
+
+    claw.set_brake_mode(
+        pros::E_MOTOR_BRAKE_HOLD
+    );
+
+    intake.set_brake_mode(
+        pros::E_MOTOR_BRAKE_COAST
+    );
+
+    toggleMotor.set_brake_mode(
+        pros::E_MOTOR_BRAKE_HOLD
+    );
+
+
+    // =========================
+    // RESET LIFT
+    // =========================
+
+    liftencoder.reset_position();
+
+
+    // =========================
+    // CALIBRATE LEMLIB
+    // =========================
+
+    pros::lcd::set_text(
+        0,
+        "Calibrating..."
+    );
+
+    chassis.calibrate();
+
+    chassis.setPose(
+        0,
+        0,
+        0
+    );
+
+
+    // =========================
+    // LIFT PID TASK
+    // =========================
+
+    static pros::Task liftTask(
+        liftPIDTask,
+        nullptr
+    );
+
+
+    // =========================
+    // SCREEN TASK
+    // =========================
+
+    static pros::Task screenTask([]() {
+
+        while (true) {
+
+            lemlib::Pose pose =
+                chassis.getPose();
+
+
+            pros::lcd::print(
+                0,
+                "X: %.2f",
+                pose.x
+            );
+
+            pros::lcd::print(
+                1,
+                "Y: %.2f",
+                pose.y
+            );
+
+            pros::lcd::print(
+                2,
+                "Theta: %.2f",
+                pose.theta
+            );
+
+
+            lemlib::telemetrySink()->info(
+                "Chassis pose: {}",
+                pose
+            );
+
+
+            pros::delay(50);
+        }
+    });
+}
+
+
+void disabled() {
+
+}
+
+
+void competition_initialize() {
+
+}
+void PIDangular () {
+
+	chassis.setPose(0, 0, 0);
+	chassis.turnToHeading(90, 15000);
+}
+
+void PIDlateral() {
+	chassis.setPose(0, 0, 0);
+	chassis.moveToPoint(0, 24, 150000);
+
+}
+
+void testauto() {
+	chassis.setPose(0, 0, 0);
+	closeClaw();
+	pros::delay(200);
+	liftstart();
+	LiftMove(500);
+	pros::delay(500);
+
+	//chassis.turnToHeading(-45, 500);
+	//LiftMove(2000);
+	//pros::delay(200);
+	//chassis.moveToPoint(-16, 0, 1500, {.maxSpeed = 100});
+	//chassis.waitUntilDone();
+	//LiftMove(-1500);
+	
+
+	
+
+}
+void far2plus1(){
+    chassis.setPose(0, 0, 0);
+chassis.arcade(-60, 0);
+closeClaw();
+pros::delay(200);
+toggleMotor.move(127);
+pros::delay(600);
+toggleMotor.move(0);
+chassis.arcade(0, 0);
+chassis.setPose(0,0,0);
+    liftstart();
+
+    chassis.moveToPoint( 0, 8, 1500,{.minSpeed = 90});
+    chassis.waitUntilDone();
+    // Update target and immediately move on
+    LiftMove(2000);
+    chassis.turnToHeading(-90,1000);
+chassis.moveToPoint(-18,9,2000,{.minSpeed = 90} );
+chassis.waitUntilDone();
+chassis.arcade(40,0);
+pros::delay(300);
+chassis.arcade(0,0);
+pros::delay(200);
+chassis.arcade(-30,0);
+pros::delay(250);
+chassis.arcade(0,0);
+pros::delay(200);
+LiftMove(500);
+pros::delay(300);
+openClaw();
+pros::delay(200);
+LiftMove(3000);
+pros::delay(300);
+
+liftstop();
+}
+
+void close2plus1(){
+chassis.setPose(0, 0, 0);
+chassis.arcade(-60, 0);
+closeClaw();
+pros::delay(200);
+toggleMotor.move(127);
+pros::delay(600);
+toggleMotor.move(0);
+chassis.arcade(0, 0);
+chassis.setPose(0,0,0);
+liftstart();
+chassis.moveToPoint( 0, 8, 1500,{.minSpeed = 90});
+chassis.waitUntilDone();
+// Update target and immediately move on
+LiftMove(2000);
+chassis.turnToHeading(90,1000);
+chassis.moveToPoint(20, 15.5 ,2000,{.minSpeed = 90} );
+chassis.waitUntilDone();
+chassis.arcade(44,0);
+pros::delay(300);
+chassis.arcade(0,0);
+pros::delay(200);
+chassis.arcade(-34,0);
+pros::delay(250);
+chassis.arcade(0,0);
+pros::delay(200);
+LiftMove(500);
+pros::delay(300);
+openClaw();
+pros::delay(200);
+LiftMove(3000);
+
+liftstop();
+liftstart();
+chassis.moveToPoint(13, 12, 600, {.forwards = false, .minSpeed = 90});
+chassis.waitUntilDone();
+chassis.turnToHeading(0, 1000);
+chassis.moveToPoint(62, 23, 1500,{.minSpeed = 90});
+chassis.waitUntilDone();
+chassis.turnToHeading(180, 1000);
+chassis.waitUntilDone();
+LiftMove(500);
+chassis.moveToPoint(65.5, 7.75, 1500,{.minSpeed = 80});
+chassis.waitUntilDone();
+pros::delay(500);
+closeClaw();
+pros::delay(500);
+chassis.moveToPoint(67, 9, 1500,{.forwards = false, .minSpeed = 80});
+chassis.waitUntilDone();
+
+
+}
+
+
+// =========================
+// AUTONOMOUS
+// =========================
+
+void autonomous() {
+    testauto();
+}
+
+
+// =========================
+// DRIVER CONTROL
+// =========================
+
+void opcontrol() {
+
+    // Disable autonomous lift PID
+    // Driver now has full control
+    liftstop();
+
+
+    while (true) {
+
+
+        // =========================
+        // ARCADE DRIVE
+        // =========================
+
+        int forward =
+            master.get_analog(
+                pros::E_CONTROLLER_ANALOG_LEFT_Y
+            );
+
+        int turn =
+            master.get_analog(
+                pros::E_CONTROLLER_ANALOG_RIGHT_X
+            );
+
+
+        leftDrive.move(
+            forward + turn
+        );
+
+        rightDrive.move(
+            forward - turn
+        );
+
+
+        // =========================
+        // CLAW + INTAKE
+        // =========================
+
+        if (
+            master.get_digital(
+                pros::E_CONTROLLER_DIGITAL_L1
+            )
+        ) {
+
+            claw.move_voltage(5000);
+
+            intake.move(0);
+
+        } else {
+
+            claw.move_voltage(-2000);
+
+            intake.move(127);
+        }
+
+
+        // =========================
+        // PORT 5 MOTOR
+        // =========================
+
+        if (
+            master.get_digital(
+                pros::E_CONTROLLER_DIGITAL_L2
+            )
+        ) {
+
+            toggleMotor.move(127);
+
+        } else {
+
+            toggleMotor.move(0);
+        }
+
+
+        // =========================
+        // LIFT
+        // =========================
+
+        bool r1 =
+            master.get_digital(
+                pros::E_CONTROLLER_DIGITAL_R1
+            );
+
+        bool r2 =
+            master.get_digital(
+                pros::E_CONTROLLER_DIGITAL_R2
+            );
+
+
+        if (r1 && r2) {
+
+            lift.move(-30);
+
+        } else if (r1) {
+
+            lift.move(127);
+
+        } else if (r2) {
+
+            lift.move(-127);
+
+        } else {
+
+            lift.move(0);
+        }
+
+
+        pros::delay(10);
+    }
+}
