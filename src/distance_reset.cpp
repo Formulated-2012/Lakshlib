@@ -1,4 +1,5 @@
 #include "distance_reset.hpp"
+#include "mcl.hpp"
 #include "lemlib/api.hpp"
 #include "pros/llemu.hpp"
 #include "pros/rtos.hpp"
@@ -157,6 +158,7 @@ bool distanceReset(DistSensor& s) {
 
     // ---- 5. Apply: change only that axis, keep heading ----
     chassis.setPose(newX, newY, pose.theta);
+    mclRecenter(); // if MCL is running, restart its particles at the new pose
 
     snprintf(msg, sizeof(msg), "%s: read %.1f in, fix %c by %+.2f",
              s.name, reading, (side == 0 || side == 2) ? 'Y' : 'X', correction);

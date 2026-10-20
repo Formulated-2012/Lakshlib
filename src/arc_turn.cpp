@@ -1,4 +1,5 @@
 #include "arc_turn.hpp"
+#include "robot_constants.hpp"
 #include "lemlib/api.hpp"
 #include "pros/rtos.hpp"
 #include <cmath>
@@ -9,8 +10,8 @@ extern lemlib::Chassis chassis;
 // =========================
 // CONFIG
 // =========================
-const double TRACK_WIDTH   = 9.75; // inches, must match lemlib::Drivetrain in main.cpp
-const double DONE_ERROR    = 1.0;  // degrees, stop when this close to target
+// (TRACK_WIDTH comes from include/robot_constants.hpp)
+const double DONE_ERROR   = 1.0;  // degrees, stop when this close to target
 const double SLOWDOWN_DEG  = 20.0; // start slowing down this many degrees from target
 const double MIN_SPEED_PCT = 0.3;  // never slow below 30% of maxSpeed while slowing
 

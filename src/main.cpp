@@ -2,6 +2,9 @@
 #include "lemlib/api.hpp"
 #include "distance_reset.hpp"
 #include "arc_turn.hpp"
+#include "mcl.hpp"
+#include "ramsete.hpp"
+#include "robot_constants.hpp"
 
 pros::Controller master(pros::E_CONTROLLER_MASTER);
 
@@ -42,12 +45,13 @@ pros::Rotation liftencoder(14);
 // LEMLIB CONFIG
 // =========================
 
+// Track width, wheel size and RPM are in include/robot_constants.hpp
 lemlib::Drivetrain drivetrain(
     &leftDrive,
     &rightDrive,
-    9.75,
-    lemlib::Omniwheel::NEW_275,
-    360,
+    TRACK_WIDTH,
+    WHEEL_DIAMETER,
+    DRIVE_RPM,
     2
 );
 
@@ -515,6 +519,42 @@ void distanceResetExample() {
     // Normal LemLib motions keep working with the corrected pose
     chassis.moveToPose(-24, -24, 45, 3000);
     chassis.waitUntilDone();
+}
+
+
+// =========================
+// EXAMPLE: MCL + RAMSETE
+//
+// Field-center coordinates. EXAMPLE coordinates - change them.
+// Measure DRIVE_KS/KV/KA first (see measureDriveFeedforward) or RAMSETE
+// will only be roughly right.
+// =========================
+
+void mclRamseteExample() {
+
+    // Start in field coordinates, then start MCL (always AFTER setPose)
+    chassis.setPose(-60, -36, 0);
+    startMcl();
+
+    // Smooth path through these points. The first point is where the robot is,
+    // and the first segment points the way the robot faces (+Y).
+    // Third number = speed limit there (0-1), e.g. slow down near the end.
+    Path out = pathFromPoints({{-60, -36}, {-60, -24}, {-48, -6}, {-24, 0, 0.5}});
+    followPathRamsete(out, 4000);
+
+    // Drive the same points back, backwards
+    Path back = pathFromPoints({{-24, 0}, {-48, -6}, {-60, -24}, {-60, -36}});
+    followPathRamsete(back, 4000, true);
+
+    // LemLib motions still work while MCL runs in the background
+    chassis.moveToPose(-48, -48, 90, 3000);
+    chassis.waitUntilDone();
+
+    // Paths drawn in path.jerryio also work (put the file in static/):
+    //   ASSET(skills1_txt);   <- at the top of the file, outside any function
+    //   followPathRamsete(pathFromAsset(skills1_txt), 5000);
+
+    stopMcl();
 }
 
 

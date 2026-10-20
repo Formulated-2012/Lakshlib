@@ -12,6 +12,12 @@ Robot code for our VEX V5 robot for the 2026-27 game **Override**.
 | `src/main.cpp` | Motors, LemLib chassis, lift PID, autons, driver control |
 | `include/distance_reset.hpp`, `src/distance_reset.cpp` | Distance sensor position resets |
 | `include/arc_turn.hpp`, `src/arc_turn.cpp` | `arcTurn()`: drive along a circular arc to a heading |
+| `include/mcl.hpp`, `src/mcl.cpp` | Monte Carlo Localization: distance sensors correct X/Y while driving |
+| `include/ramsete.hpp`, `src/ramsete.cpp` | RAMSETE path following on a timetable |
+| `include/robot_constants.hpp` | Track width, wheel size, drive RPM (shared by LemLib, arcTurn, RAMSETE) |
+| `include/rw/`, `src/rw/` | Math ported from [RW-Template](https://github.com/richardbwang/RW-Template) (MIT). Don't edit unless porting a fix |
+
+LemLib's own files (`include/lemlib/`, `firmware/LemLib.a`) are **not** modified. Everything here is added beside it.
 
 ---
 
@@ -123,9 +129,73 @@ The code builds, but it **has not been tested on a real robot yet**. Before trus
 arcTurn(radius, targetHeading, maxSpeed = 80, timeout = 2000, forwards = true);
 ```
 
-Drives along a circle of `radius` inches (circle center to robot center) until the robot reaches `targetHeading`, turning whichever way is shorter. The outer side runs at `maxSpeed` and the inner side at `maxSpeed * (R - w/2) / (R + w/2)`, where `w` is the track width (9.75 in, set in `src/arc_turn.cpp`). It slows down over the last 20 degrees.
+Drives along a circle of `radius` inches (circle center to robot center) until the robot reaches `targetHeading`, turning whichever way is shorter. The outer side runs at `maxSpeed` and the inner side at `maxSpeed * (R - w/2) / (R + w/2)`, where `w` is the track width (9.75 in, set in `include/robot_constants.hpp`). It slows down over the last 20 degrees.
 
 It **blocks** until done and isn't a LemLib motion, so it can't be motion-chained. It waits for any running LemLib motion to finish first. **Not tested on a real robot yet.** Expect to tune the slowdown for overshoot.
+
+---
+
+## Monte Carlo Localization (MCL)
+
+Distance resets fix the pose only when we stop and ask. **MCL** works all the time: a background task uses the same distance sensors to keep X/Y from drifting **while the robot drives**. Heading still comes from the IMU.
+
+How it works, in short:
+
+1. A cloud of 200 "particles" (guesses of where the robot is) moves along with odometry, plus a little random spread.
+2. Every 30 ms, each clean distance reading makes the guesses that match the walls more likely and the others less likely. The unlikely guesses are replaced by copies of the likely ones.
+3. LemLib's pose is **nudged** toward the best guess by at most 0.15 in per axis per update. It only nudges on an axis where MCL is confident, and ignores guesses more than 12 in away (MCL is probably lost then). Motions never see a jump.
+
+It skips readings that are blocked (shorter than the wall should be), hit near a corner, hit the wall too steeply, or came from a robot spinning fast. It accounts for the ~40 ms sensor delay and recovers if the robot gets shoved.
+
+```cpp
+chassis.setPose(-60, -36, 0); // real field start (field-center coordinates)
+startMcl();                   // always AFTER setPose
+// ... normal LemLib motions, RAMSETE, etc ...
+stopMcl();                    // optional: back to plain odometry
+```
+
+- **Sensors and walls:** MCL uses the sensors, walls and limits from the CONFIG section of `src/distance_reset.cpp`, so set those up first.
+- **MCL settings:** particle count, sensor delay, corner margin and debug are in the CONFIG section of `src/mcl.cpp`.
+- **setPose while running:** if you call `chassis.setPose()` while MCL is running, call `mclRecenter()` right after. `distanceReset()` already does it, and jumps over 4 in are caught automatically.
+- **Changes the pose during motions:** unlike distance resets, MCL moves the pose while motions are running, in tiny steps. If a motion ever acts strangely, run it with MCL stopped to compare.
+- **Debug:** with `MCL_DEBUG = true`, brain screen line 3 shows the estimate, the spread (how unsure it is; small = confident) and how many ms each update takes. Keep that under ~5 ms, or lower `MCL_PARTICLES`.
+
+> RW-Template has only tested MCL in simulation, and **our port hasn't run on a robot yet**. Test on the practice field first: drive around with MCL on and check that the pose stays right, compared with a tape measure.
+
+---
+
+## RAMSETE path following
+
+`followPathRamsete()` follows a smooth path **on a timetable**. It plans when to be where (slowing down for curves), then steers and speeds up or slows down to stay on schedule. This makes timing very repeatable, which is useful in skills. It ends near the last point, usually within 1-2 in.
+
+```cpp
+Path out = pathFromPoints({{-60, -36}, {-60, -24}, {-48, -6}, {-24, 0, 0.5}});
+followPathRamsete(out, 4000);                // timeout 4000 ms
+followPathRamsete(back, 4000, true);         // reverse = drive backwards
+followPathRamsete(out, 4000, false, false);  // exit = false: end still moving
+followPathRamsete(out, 4000, false, true, 40); // max 40 in/s
+```
+
+- **Path points:** start the path where the robot is. The first segment should point the way the robot faces. The optional third number in a point is a speed limit there (0-1 of max speed).
+- **path.jerryio:** paths drawn there work too. Save in the "LemLib v0.5" format, put the file in `static/`, and use `ASSET(name_txt);` plus `pathFromAsset(name_txt)`. The same file also works with LemLib's `chassis.follow()`.
+- **Blocking:** it blocks until done and waits for any running LemLib motion to finish first. It can't be motion-chained with LemLib motions.
+
+### Tuning (do this first!)
+
+RAMSETE drives the motors with **feedforward** (volts = kS + kV * speed + kA * accel). Without measured numbers it guesses from the drive RPM and is only roughly right.
+
+1. Give the robot about 4 ft of open space in front and behind.
+2. Temporarily call `measureDriveFeedforward();` (e.g. at the top of `autonomous()`) and run it. It drives back and forth and **never returns**.
+3. Copy `DRIVE_KS`, `DRIVE_KV`, `DRIVE_KA` from the brain screen (lines 4-7) or terminal into the CONFIG section of `src/ramsete.cpp`.
+4. Remove the call. Then adjust `MAX_SPEED`, `MAX_ACCEL` and `MAX_LATERAL_ACCEL` (lower = gentler, less wheel slip).
+
+> Also check `DRIVE_RPM` and `WHEEL_DIAMETER` in `include/robot_constants.hpp`. The motor cartridge (blue/green/red) is read from the motors automatically.
+
+---
+
+## Credits
+
+MCL, RAMSETE, path building and the jerryio parser are ported from [RW-Template](https://github.com/richardbwang/RW-Template) by Richard Wang, under the MIT License (see `licenses/RW-Template-LICENSE.txt`). The math in `src/rw/` is kept almost unchanged. The robot-side code (`src/mcl.cpp`, `src/ramsete.cpp`) was rewritten for PROS and LemLib.
 
 ---
 
