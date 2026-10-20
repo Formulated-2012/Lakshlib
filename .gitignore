@@ -1,0 +1,26 @@
+# ===== PROS build outputs =====
+bin/
+.d/
+*.d
+*.o
+*.obj
+*.bin
+*.elf
+*.map
+temp.log
+temp.errors
+
+# ===== Editor / tooling =====
+.vscode/
+.cache/
+.clangd/
+compile_commands.json
+*.ini
+
+# ===== OS junk =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Kept on purpose (do NOT ignore): project.pros, Makefile, common.mk,
+# firmware/, include/, src/, static/
