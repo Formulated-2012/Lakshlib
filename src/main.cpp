@@ -1,5 +1,7 @@
 #include "main.h"
 #include "lemlib/api.hpp"
+#include "distance_reset.hpp"
+#include "arc_turn.hpp"
 
 pros::Controller master(pros::E_CONTROLLER_MASTER);
 
@@ -481,6 +483,38 @@ chassis.moveToPoint(67, 9, 1500,{.forwards = false, .minSpeed = 80});
 chassis.waitUntilDone();
 
 
+}
+
+
+// =========================
+// EXAMPLE: DISTANCE SENSOR RESET
+//
+// Uses FIELD-CENTER coordinates (0,0 = middle of the field, walls at +/-70.2).
+// The coordinates here are EXAMPLES - change them to your real start spot.
+//
+// Pattern: move -> waitUntilDone -> distanceResetXY -> keep driving
+// =========================
+
+void distanceResetExample() {
+
+    // Start in field coordinates, NOT setPose(0, 0, 0)
+    // (example: near the -X wall, facing +Y)
+    chassis.setPose(-60, -36, 0);
+
+    // Back into the corner area near the -X and -Y walls.
+    // Heading stays 0, so the back sensor faces the -Y wall
+    // and the left sensor faces the -X wall.
+    chassis.moveToPoint(-58, -58, 2000, {.forwards = false});
+
+    // ALWAYS wait until the robot has stopped before a reset
+    chassis.waitUntilDone();
+
+    // Fix X with the left sensor and Y with the back sensor
+    distanceResetXY(leftSensor, backSensor);
+
+    // Normal LemLib motions keep working with the corrected pose
+    chassis.moveToPose(-24, -24, 45, 3000);
+    chassis.waitUntilDone();
 }
 
 
