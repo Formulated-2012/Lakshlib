@@ -16,6 +16,7 @@ void distanceResetExample();
 void mclRamseteExample();
 void stopAndGoExample();
 void smoothExample();
+void testAuto();
 extern "C" void autonomous();
 
 // { name, function, start x, start y, start heading }
@@ -35,6 +36,7 @@ const SimAuton SIM_AUTONS[] = {
     {"mclRamseteExample",    mclRamseteExample,    -60, -36,   0},
     {"stopAndGoExample",     stopAndGoExample,     -60, -36,   0},
     {"smoothExample",        smoothExample,        -60, -36,   0},
+    {"testAuto",             testAuto,             -35, -60,   0},
 };
 const int SIM_AUTON_COUNT = sizeof(SIM_AUTONS) / sizeof(SIM_AUTONS[0]);
 

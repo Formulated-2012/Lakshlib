@@ -80,6 +80,9 @@ static void mclLoop() {
     // Start the particles at the current pose and forget old history
     auto restart = [&](const lemlib::Pose& p) {
         rw::mclInit(MCL_PARTICLES, p.x, p.y, 1.0);
+        estX = p.x; // until the filter has run, the best guess is the pose itself
+        estY = p.y;
+        estSpread = 1.0;
         for (int i = 0; i < HISTORY; i++) {
             histX[i] = motionX;
             histY[i] = motionY;
@@ -210,6 +213,10 @@ static void mclLoop() {
 
 void startMcl() {
     recenterRequested = true; // start the particles at the current pose
+    lemlib::Pose pose = chassis.getPose();
+    estX = pose.x; // so mclGetEstimate() never returns (0, 0) before the first update
+    estY = pose.y;
+    estSpread = 1.0;
     mclRunning = true;
     if (mclTask == nullptr) {
         // One priority above default, so it runs ahead of LemLib's odometry task

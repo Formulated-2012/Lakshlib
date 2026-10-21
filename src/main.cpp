@@ -524,6 +524,48 @@ void distanceResetExample() {
 
 
 // =========================
+// TEST AUTO: uses every motion type once
+//
+// Start: robot on the -Y wall side, 35 in left of center, back 10 in
+// from the wall, facing +Y (away from the wall): x -35, y -60, heading 0.
+// The route stays clear of the Override goals and wall stacks.
+// =========================
+
+void testAuto() {
+    // 1. Field coordinates + MCL for the whole run
+    chassis.setPose(-35, -60, 0);
+    startMcl();
+
+    // 2. Plain LemLib: drive 20 in forward
+    chassis.moveToPoint(-35, -40, 2000);
+    chassis.waitUntilDone();
+
+    // 3. Smooth curve through 3 points (RAMSETE)
+    driveThrough({{-30, -30}, {-24, -20}, {-12, -14}}, 4000);
+
+    // 4. Face -Y, then a circular arc: 12 in radius, clockwise to face -X
+    chassis.turnToHeading(180, 1000);
+    chassis.waitUntilDone();
+    arcTurn(12, 270);
+
+    // 5. Smooth curve BACKWARDS toward the start
+    //    (turns first, since the back of the robot is facing the wrong way)
+    driveThrough({{-30, -40}, {-35, -52}}, 4000, {.forwards = false});
+
+    // 6. Square up and fix X and Y with the distance sensors
+    chassis.turnToHeading(0, 1000);
+    chassis.waitUntilDone();
+    distanceResetXY(leftSensor, backSensor);
+
+    // 7. Plain LemLib again, with the corrected position
+    chassis.moveToPoint(-35, -36, 2000);
+    chassis.waitUntilDone();
+
+    stopMcl();
+}
+
+
+// =========================
 // EXAMPLE: SAME ROUTE, STOP-AND-GO vs SMOOTH
 //
 // Field-center coordinates. EXAMPLE coordinates - change them.
