@@ -26,7 +26,8 @@ static double headingError(double target, double current) {
 
 void arcTurn(double radius, double targetHeading, int maxSpeed, int timeout, bool forwards) {
     // Don't fight a LemLib motion that's still running
-    chassis.waitUntilDone();
+    // (Not chassis.waitUntilDone(): that waits forever if no LemLib motion has run yet)
+    while (chassis.isInMotion()) pros::delay(10);
 
     if (radius < 0) radius = 0;
 

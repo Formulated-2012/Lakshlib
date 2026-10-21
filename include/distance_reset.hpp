@@ -44,6 +44,7 @@ extern const double WALL_POS_X, WALL_NEG_X, WALL_POS_Y, WALL_NEG_Y;
 extern const double MAX_READING_IN;
 extern const double MAX_ANGLE_DEG;
 extern const int MIN_CONFIDENCE;
+extern const double CORNER_MARGIN;
 
 // Read one sensor and correct the axis of the wall it is looking at.
 // Returns true if a correction was applied, false if the reading was rejected.

@@ -505,10 +505,11 @@ void distanceResetExample() {
     // (example: near the -X wall, facing +Y)
     chassis.setPose(-60, -36, 0);
 
-    // Back into the corner area near the -X and -Y walls.
+    // Back up near the -X and -Y walls.
     // Heading stays 0, so the back sensor faces the -Y wall
     // and the left sensor faces the -X wall.
-    chassis.moveToPoint(-58, -58, 2000, {.forwards = false});
+    // Not right in the corner: the corner loader blocks the -X wall there.
+    chassis.moveToPoint(-58, -48, 2000, {.forwards = false});
 
     // ALWAYS wait until the robot has stopped before a reset
     chassis.waitUntilDone();

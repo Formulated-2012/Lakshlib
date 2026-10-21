@@ -25,12 +25,11 @@ DistSensor* const MCL_SENSORS[] = {&backSensor, &leftSensor, &rightSensor};
 
 const int    MCL_PARTICLES   = 200;  // more = smoother but slower (max 1000). Lower if "ms" on screen > ~5
 const double SENSOR_DELAY_MS = 40;   // how far behind distance readings are
-const double CORNER_MARGIN   = 0;    // ignore readings hitting the wall this close to a corner (0 = off)
 const double JUMP_IN         = 4.0;  // pose jumped more than this in 10 ms = someone called setPose
 const bool   MCL_DEBUG       = true; // print estimate to terminal + brain screen line 3
 
-// Walls (WALL_POS_X, ...), MAX_READING_IN, MAX_ANGLE_DEG and MIN_CONFIDENCE
-// come from the CONFIG section of src/distance_reset.cpp.
+// Walls (WALL_POS_X, ...), MAX_READING_IN, MAX_ANGLE_DEG, MIN_CONFIDENCE and
+// CORNER_MARGIN come from the CONFIG section of src/distance_reset.cpp.
 
 // =====================================================================
 //   END CONFIG

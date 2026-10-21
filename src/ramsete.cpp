@@ -107,7 +107,8 @@ Path pathFromAsset(const asset& file) {
 
 void followPathRamsete(const Path& path, int timeout, bool reverse, bool exit, double maxSpeed) {
     // Never fight a LemLib motion
-    chassis.waitUntilDone();
+    // (Not chassis.waitUntilDone(): that waits forever if no LemLib motion has run yet)
+    while (chassis.isInMotion()) pros::delay(10);
 
     int n = (int)path.samples.size();
     if (n < 2) {
@@ -177,7 +178,8 @@ void followPathRamsete(const Path& path, int timeout, bool reverse, bool exit, d
 }
 
 void measureDriveFeedforward() {
-    chassis.waitUntilDone();
+    // (Not chassis.waitUntilDone(): that waits forever if no LemLib motion has run yet)
+    while (chassis.isInMotion()) pros::delay(10);
 
     const double voltsSteps[6] = {3, -3, 6, -6, 9, -9};
     double steadySpeed[6];

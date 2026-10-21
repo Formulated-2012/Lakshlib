@@ -1,6 +1,7 @@
 #include "distance_reset.hpp"
 #include "mcl.hpp"
 #include "lemlib/api.hpp"
+#include "lemlib/chassis/odom.hpp" // lemlib::getSpeed()
 #include "pros/llemu.hpp"
 #include "pros/rtos.hpp"
 #include <cmath>
@@ -43,7 +44,14 @@ const double MAX_READING_IN    = 60.0; // ignore readings farther than this
 const double MAX_CORRECTION_IN = 6.0;  // ignore if it would move the pose more than this
 const double MAX_ANGLE_DEG     = 20.0; // ignore if beam is this far from perpendicular to the wall
 const int    MIN_CONFIDENCE    = 40;   // 0-63, only checked when reading > 200 mm
-const int    SETTLE_MS         = 100;  // wait before distanceResetXY reads
+// Ignore beams that hit a wall this close to a corner (inches, 0 = off).
+// In Override the corner LOADERS sit in front of the wall there, so the sensor
+// measures the loader instead of the wall (found in the simulator: a 3.8" wrong reset).
+const double CORNER_MARGIN     = 15.0;
+// The robot must be really stopped: a LemLib motion can end while the robot is still
+// rolling (found in the simulator: ~10 in/s after moveToPoint ended -> 1.5" wrong reset)
+const double STILL_SPEED_IPS  = 1.0;  // "stopped" = slower than this (in/s)
+const int    MAX_SETTLE_MS    = 500;  // distanceResetXY waits up to this long to stop
 
 // ----- Debug -----
 // true = print pose before/after and the raw reading to the terminal and
@@ -67,11 +75,17 @@ static double degToRad(double deg) {
     return deg * M_PI / 180.0;
 }
 
+// How fast the robot is moving (in/s), from LemLib odometry
+static double robotSpeed() {
+    lemlib::Pose speed = lemlib::getSpeed();
+    return std::hypot(speed.x, speed.y);
+}
+
 bool distanceReset(DistSensor& s) {
     char msg[80];
 
-    // Safety: never reset while LemLib is driving
-    if (chassis.isInMotion()) {
+    // Safety: never reset while LemLib is driving or the robot is still rolling
+    if (chassis.isInMotion() || robotSpeed() > STILL_SPEED_IPS) {
         snprintf(msg, sizeof(msg), "%s: skipped, robot moving", s.name);
         debugPrint(4, msg);
         return false;
@@ -136,6 +150,16 @@ bool distanceReset(DistSensor& s) {
     double newY = pose.y;
     double correction = 0;
 
+    // Where along the wall the beam lands; skip it if that's near a corner
+    double along = (side == 0 || side == 2) ? pose.x + offX + reading * dirX
+                                            : pose.y + offY + reading * dirY;
+    double halfWall = (side == 0 || side == 2) ? (WALL_POS_X - WALL_NEG_X) / 2 : (WALL_POS_Y - WALL_NEG_Y) / 2;
+    if (CORNER_MARGIN > 0 && std::fabs(along) > halfWall - CORNER_MARGIN) {
+        snprintf(msg, sizeof(msg), "%s: hits near a corner (loader?)", s.name);
+        debugPrint(4, msg);
+        return false;
+    }
+
     if (side == 0 || side == 2) {
         // Hitting a Y wall: (pose.y + offY) + reading * dirY = wall
         double wall = (side == 0) ? WALL_POS_Y : WALL_NEG_Y;
@@ -172,8 +196,13 @@ bool distanceReset(DistSensor& s) {
 }
 
 bool distanceResetXY(DistSensor& a, DistSensor& b) {
-    // Let the robot stop rocking before reading
-    pros::delay(SETTLE_MS);
+    // Wait until the robot has really stopped (up to MAX_SETTLE_MS), plus a moment
+    // for the distance sensors to take a fresh reading
+    uint32_t start = pros::millis();
+    while (robotSpeed() > STILL_SPEED_IPS && pros::millis() - start < (uint32_t)MAX_SETTLE_MS) {
+        pros::delay(10);
+    }
+    pros::delay(50);
 
     // Run both, even if the first one fails
     bool okA = distanceReset(a);
