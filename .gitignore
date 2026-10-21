@@ -24,3 +24,7 @@ desktop.ini
 
 # Kept on purpose (do NOT ignore): project.pros, Makefile, common.mk,
 # firmware/, include/, src/, static/
+
+# ===== Simulator =====
+sim/build/
+sim/out/

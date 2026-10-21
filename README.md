@@ -15,6 +15,8 @@ Robot code for our VEX V5 robot for the 2026-27 game **Override**.
 | `include/mcl.hpp`, `src/mcl.cpp` | Monte Carlo Localization: distance sensors correct X/Y while driving |
 | `include/ramsete.hpp`, `src/ramsete.cpp` | RAMSETE path following on a timetable |
 | `include/robot_constants.hpp` | Track width, wheel size, drive RPM (shared by LemLib, arcTurn, RAMSETE) |
+| `include/drive_calibration.hpp`, `src/drive_calibration.cpp` | `calibrateDrive()`: records a drive log so the simulator can match our robot |
+| `sim/` | Computer simulator. Only `sim/sim-autons.cpp` is meant to be edited |
 | `include/rw/`, `src/rw/` | Math ported from [RW-Template](https://github.com/richardbwang/RW-Template) (MIT). Don't edit unless porting a fix |
 
 LemLib's own files (`include/lemlib/`, `firmware/LemLib.a`) are **not** modified. Everything here is added beside it.
@@ -37,7 +39,7 @@ All normal LemLib motions (`moveToPoint`, `moveToPose`, `turnToHeading`, `turnTo
 
 ```cpp
 bool distanceReset(DistSensor& s);                  // one sensor, one axis
-bool distanceResetXY(DistSensor& a, DistSensor& b); // short settle delay, then both
+bool distanceResetXY(DistSensor& a, DistSensor& b); // waits until the robot has stopped, then both
 ```
 
 `distanceReset` returns `true` if it applied a correction. `distanceResetXY` returns `true` only if **both** sensors applied one.
@@ -69,7 +71,7 @@ DistSensor rightSensor = {"right", pros::Distance(9),  5.5,  0.0,  90};
 - **mount**: where the sensor faces compared to the robot front: 0 front, 90 right, 180 back, 270 left.
 - Measure offsets from the robot's **center of rotation** to the **face** of the sensor.
 
-The same section also has the wall positions, safety limits (60 in max reading, 6 in max correction, 20 degrees max angle, confidence 40), the settle delay, and the debug flag.
+The same section also has the wall positions, safety limits (60 in max reading, 6 in max correction, 20 degrees max angle, confidence 40, 15 in corner margin), the "stopped" speed, and the debug flag.
 
 > The ports and offsets in the file right now are **placeholders** (ports 7, 8, 9). Measure the real robot before using them.
 
@@ -80,7 +82,8 @@ If the chassis object isn't named `chassis`, change the `extern lemlib::Chassis 
 Resets **never run automatically**. Rules:
 
 - Only call them in autonomous, when the robot is **stopped near a wall**.
-- Always call them **right after `chassis.waitUntilDone()`**. Never during a motion. If LemLib is still moving, `distanceReset` refuses and returns `false`.
+- Always call them **right after `chassis.waitUntilDone()`**. Never during a motion. If LemLib is still moving, **or the robot is still rolling** (faster than 1 in/s), `distanceReset` refuses and returns `false`. A LemLib motion can end while the robot is still coasting; `distanceResetXY` waits up to 0.5 s for it to stop.
+- Make sure the beam lands at least 15 in from a corner. In Override the corner **loaders** sit in front of the wall there, and the sensor would measure the loader. Readings like that are skipped (`CORNER_MARGIN`).
 - Make sure the beam hits the **wall**, not a game element or another robot.
 
 Good spots in Override:
@@ -94,7 +97,7 @@ Example (`distanceResetExample()` in `src/main.cpp`):
 
 ```cpp
 chassis.setPose(-60, -36, 0);                        // real field start
-chassis.moveToPoint(-58, -58, 2000, {.forwards = false});
+chassis.moveToPoint(-58, -48, 2000, {.forwards = false});
 chassis.waitUntilDone();                             // stopped near the walls
 distanceResetXY(leftSensor, backSensor);             // fix X and Y
 chassis.moveToPose(-24, -24, 45, 3000);
@@ -193,9 +196,59 @@ RAMSETE drives the motors with **feedforward** (volts = kS + kV * speed + kA * a
 
 ---
 
+## Simulator
+
+Runs our **real robot code and LemLib** on a computer, with a simulated robot, sensors and Override field. It writes a replay page showing where the robot **really** went next to where the **code thought** it was, so odometry drift, MCL and distance resets can be checked before field time.
+
+### Setup (once)
+
+Install a desktop C++ compiler (the PROS toolchain only builds for the V5 brain):
+
+```bash
+winget install BrechtSanders.WinLibs.POSIX.UCRT
+```
+
+### Running an auton
+
+From Git Bash in the project folder:
+
+```bash
+sh sim/run-sim.sh far2plus1
+```
+
+- The first run builds the simulator, which takes a minute. After that it only rebuilds when code changes.
+- It prints where the robot ended up and where the code thought it was, then writes the replay to `sim/out/far2plus1.html`. Open that file in a browser.
+- `sh sim/run-sim.sh --list` shows the autons it knows. `sh sim/run-sim.sh --help` shows the options:
+  - `--time 60` for skills
+  - `--ideal` turns off slip and sensor noise
+  - `--walls` removes the field elements
+  - `--start X,Y,HEADING` sets the starting spot
+  - `--seed N` changes the random slip and noise
+
+**Adding an auton:** add one line to `sim/sim-autons.cpp` (the only sim file you should need to edit). Give it the **real starting spot** on the field. For field-coordinate autons, that must match their first `setPose`.
+
+### Making it drive like our robot (optional)
+
+The default simulated drive is a typical VEX drivetrain. To match ours:
+
+1. On the robot, in open space with about 4 ft clear on every side, call `calibrateDrive();` (from `drive_calibration.hpp`) after `initialize()`. It drives a fixed ~15 s pattern and saves `drive_log.csv` to the SD card, or prints it to the terminal if there's no card.
+2. Copy `drive_log.csv` to the computer, then run `sh sim/fit-profile.sh drive_log.csv`.
+3. That writes `sim/robot-profile.txt`, which the simulator uses automatically. Commit it.
+
+### What it simulates (and what it doesn't)
+
+- **Simulated:** drive physics (motor lag, current limit, wheel slip, turning scrub, sideways skid), IMU scale error and drift, distance sensor noise, delay and blocking by Override goals, loaders and wall stacks, plus the robot bumping into walls.
+- **Real code:** LemLib is compiled from its 0.5.6 source (`sim/lemlib-src/`). Its headers are identical to ours, so it is the same LemLib the robot runs. All our `src/` code runs unchanged.
+- **Not simulated:** game objects, the lift, claw and intake (their motors just spin), and the controller (nobody is driving). Robots don't collide with field elements, only with the walls.
+- **How it works:** PROS is replaced by a fake version (`sim/fake/`) that talks to the simulated robot (`sim/engine/`). If the sim build says something from PROS is missing, add it to `sim/fake/pros/sim_pros.hpp`.
+
+---
+
 ## Credits
 
-MCL, RAMSETE, path building and the jerryio parser are ported from [RW-Template](https://github.com/richardbwang/RW-Template) by Richard Wang, under the MIT License (see `licenses/RW-Template-LICENSE.txt`). The math in `src/rw/` is kept almost unchanged. The robot-side code (`src/mcl.cpp`, `src/ramsete.cpp`) was rewritten for PROS and LemLib.
+MCL, RAMSETE, path building, the jerryio parser and the simulator (engine, replay viewer, profile fitter, drive calibration) are ported from [RW-Template](https://github.com/richardbwang/RW-Template) by Richard Wang, under the MIT License (see `licenses/RW-Template-LICENSE.txt`). The math in `src/rw/` is kept almost unchanged. The robot-side code (`src/mcl.cpp`, `src/ramsete.cpp`) was rewritten for PROS and LemLib.
+
+The simulator compiles [LemLib](https://github.com/LemLib/LemLib) 0.5.6 from source (`sim/lemlib-src/`), under the MIT License (see `licenses/LemLib-LICENSE.txt`).
 
 ---
 
