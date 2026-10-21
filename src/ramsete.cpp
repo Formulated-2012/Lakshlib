@@ -4,6 +4,7 @@
 // Copyright (c) 2025 Richard Wang, MIT License - see licenses/RW-Template-LICENSE.txt
 // Rewritten to use PROS motor groups and the LemLib pose.
 #include "ramsete.hpp"
+#include "mcl.hpp"
 #include "robot_constants.hpp"
 #include "lemlib/api.hpp"
 #include "pros/llemu.hpp"
@@ -175,6 +176,49 @@ void followPathRamsete(const Path& path, int timeout, bool reverse, bool exit, d
         leftDrive.move_velocity(0);
         rightDrive.move_velocity(0);
     }
+}
+
+void driveThrough(const std::vector<Waypoint>& points, int timeout, DriveThroughParams params) {
+    if (points.empty()) return;
+    while (chassis.isInMotion()) pros::delay(10);
+    uint32_t start = pros::millis();
+
+    // MCL keeps the position honest while driving the curve
+    double mx, my, spread;
+    if (params.useMcl && !mclGetEstimate(mx, my, spread)) startMcl();
+
+    lemlib::Pose pose = chassis.getPose();
+    const double first_x = points[0].x, first_y = points[0].y;
+
+    // Which way the robot has to drive to head toward the first point
+    // (driving backwards: the back of the robot leads)
+    double toFirst = atan2(first_x - pose.x, first_y - pose.y) * 180 / M_PI;
+    double facing = pose.theta + (params.forwards ? 0 : 180);
+    double off = remainder(toFirst - facing, 360.0);
+    if (std::fabs(off) > 30 && hypot(first_x - pose.x, first_y - pose.y) > 2) {
+        // Too far off to curve there smoothly: turn toward it first
+        chassis.turnToPoint(first_x, first_y, 1000, {.forwards = params.forwards});
+        while (chassis.isInMotion()) pros::delay(10);
+        pose = chassis.getPose();
+        facing = pose.theta + (params.forwards ? 0 : 180);
+    }
+
+    // The path starts where the robot is, with a short straight lead-in the way
+    // it's driving, so the curve leaves smoothly instead of swerving
+    double dist = hypot(first_x - pose.x, first_y - pose.y);
+    double lead = fmin(fmax(dist / 3, 2.0), 8.0);
+    double rad = facing * M_PI / 180;
+    std::vector<Waypoint> all;
+    all.push_back(Waypoint(pose.x, pose.y));
+    if (dist > 4) all.push_back(Waypoint(pose.x + lead * sin(rad), pose.y + lead * cos(rad)));
+    for (const Waypoint& p : points) {
+        // Skip a point that's basically where the last one is
+        if (hypot(p.x - all.back().x, p.y - all.back().y) > 1) all.push_back(p);
+    }
+    if (all.size() < 2) return;
+
+    int left = timeout - (int)(pros::millis() - start);
+    followPathRamsete(pathFromPoints(all), left > 0 ? left : 1, !params.forwards, true, params.maxSpeed);
 }
 
 void measureDriveFeedforward() {

@@ -183,6 +183,36 @@ followPathRamsete(out, 4000, false, true, 40); // max 40 in/s
 - **path.jerryio:** paths drawn there work too. Save in the "LemLib v0.5" format, put the file in `static/`, and use `ASSET(name_txt);` plus `pathFromAsset(name_txt)`. The same file also works with LemLib's `chassis.follow()`.
 - **Blocking:** it blocks until done and waits for any running LemLib motion to finish first. It can't be motion-chained with LemLib motions.
 
+### driveThrough: smooth moveToPoint
+
+Instead of several `moveToPoint` calls that stop at every point, list the points once:
+
+```cpp
+// Stop-and-go
+chassis.moveToPoint(-60, -12, 2000);
+chassis.waitUntilDone();
+chassis.moveToPoint(-42, 6, 2000);
+chassis.waitUntilDone();
+chassis.moveToPoint(-20, 14, 2000);
+chassis.waitUntilDone();
+chassis.moveToPoint(-12, 24, 2000);
+chassis.waitUntilDone();
+
+// One smooth curve through the same points
+driveThrough({{-60, -12}, {-42, 6}, {-20, 14}, {-12, 24}}, 6000);
+```
+
+It builds a RAMSETE path from where the robot is now through every point, and starts MCL if it isn't running. In the simulator, the smooth version reached the last point in **2.9 s instead of 4.25 s**, and didn't stop on the way.
+
+- **Turning first:** if the first point is more than 30° off the way the robot faces, it turns toward it first, then drives the curve.
+- **Options:**
+  - `{.forwards = false}` drives backwards.
+  - `{.maxSpeed = 40}` caps the speed (in/s).
+  - `{.useMcl = false}` turns MCL off. Use it for autons that start with `setPose(0, 0, 0)`, because MCL only works in field coordinates.
+- **Speed limits:** a third number on a point slows down near it, e.g. `{-12, 24, 0.5}`.
+- **Blocking:** it stops at the last point and blocks until done (no `waitUntilDone()` needed).
+- **Example:** `smoothExample()` and `stopAndGoExample()` in `src/main.cpp` drive the same route both ways. Try `sh sim/run-sim.sh smoothExample`.
+
 ### Tuning (do this first!)
 
 RAMSETE drives the motors with **feedforward** (volts = kS + kV * speed + kA * accel). Without measured numbers it guesses from the drive RPM and is only roughly right.

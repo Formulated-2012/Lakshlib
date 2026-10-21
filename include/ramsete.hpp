@@ -46,6 +46,30 @@ Path pathFromAsset(const asset& file);
 void followPathRamsete(const Path& path, int timeout, bool reverse = false, bool exit = true,
                        double maxSpeed = 0);
 
+// =========================
+// DRIVE THROUGH POINTS (smooth moveToPoint)
+//
+// Instead of several chassis.moveToPoint() calls that stop at every point:
+//
+//     driveThrough({{-60, -12}, {-42, 6}, {-12, 24}}, 5000);
+//
+// drives ONE smooth curve through all the points with RAMSETE, starting from
+// where the robot is now, with MCL correcting the position in the background.
+//   - If the first point is more than 30 deg off the way the robot faces,
+//     it turns toward it first (chassis.turnToPoint), then drives the curve.
+//   - Optional third number = speed limit near that point (0-1), e.g. {-12, 24, 0.5}.
+//   - It stops at the last point and BLOCKS until done (no waitUntilDone needed).
+//
+// MCL only works in FIELD coordinates (auton starts with setPose(real field spot)).
+// For autons that start with setPose(0, 0, 0), pass {.useMcl = false}.
+// =========================
+struct DriveThroughParams {
+    bool forwards = true; // false = drive backwards through the points
+    double maxSpeed = 0;  // in/s (0 = MAX_SPEED from src/ramsete.cpp)
+    bool useMcl = true;   // start MCL if it isn't running yet
+};
+void driveThrough(const std::vector<Waypoint>& points, int timeout, DriveThroughParams params = {});
+
 // Measures kS, kV, kA. Needs about 4 ft of open space in front and behind.
 // Shows the numbers on the brain screen and terminal. NEVER RETURNS.
 void measureDriveFeedforward();

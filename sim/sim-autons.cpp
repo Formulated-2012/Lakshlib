@@ -14,6 +14,8 @@ void PIDangular();
 void PIDlateral();
 void distanceResetExample();
 void mclRamseteExample();
+void stopAndGoExample();
+void smoothExample();
 extern "C" void autonomous();
 
 // { name, function, start x, start y, start heading }
@@ -31,6 +33,8 @@ const SimAuton SIM_AUTONS[] = {
     {"PIDlateral",           PIDlateral,             0, -24,   0},
     {"distanceResetExample", distanceResetExample, -60, -36,   0},
     {"mclRamseteExample",    mclRamseteExample,    -60, -36,   0},
+    {"stopAndGoExample",     stopAndGoExample,     -60, -36,   0},
+    {"smoothExample",        smoothExample,        -60, -36,   0},
 };
 const int SIM_AUTON_COUNT = sizeof(SIM_AUTONS) / sizeof(SIM_AUTONS[0]);
 

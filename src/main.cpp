@@ -524,6 +524,37 @@ void distanceResetExample() {
 
 
 // =========================
+// EXAMPLE: SAME ROUTE, STOP-AND-GO vs SMOOTH
+//
+// Field-center coordinates. EXAMPLE coordinates - change them.
+// =========================
+
+// Stops (or nearly) at every point
+void stopAndGoExample() {
+    chassis.setPose(-60, -36, 0);
+    chassis.moveToPoint(-60, -12, 2000);
+    chassis.waitUntilDone();
+    chassis.moveToPoint(-42, 6, 2000);
+    chassis.waitUntilDone();
+    chassis.moveToPoint(-20, 14, 2000);
+    chassis.waitUntilDone();
+    chassis.moveToPoint(-12, 24, 2000);
+    chassis.waitUntilDone();
+}
+
+// One smooth curve through the same points (RAMSETE + MCL)
+void smoothExample() {
+    chassis.setPose(-60, -36, 0);
+    driveThrough({{-60, -12}, {-42, 6}, {-20, 14}, {-12, 24}}, 6000);
+
+    // Back the way we came, driving backwards
+    driveThrough({{-30, 4}, {-60, -24}}, 5000, {.forwards = false});
+
+    stopMcl();
+}
+
+
+// =========================
 // EXAMPLE: MCL + RAMSETE
 //
 // Field-center coordinates. EXAMPLE coordinates - change them.
